@@ -53,24 +53,19 @@ class Board(object):
             raise BoardError('that position already has a different letter')
         self.rows[row][col] = val
 
-        assert (row, col) not in self.settled
-        assert not self.settled & self.frontier
-        assert len(self.settled | self.frontier) == self.size * self.size
         self.settled.add((row, col))
         self.frontier.remove((row, col))
-        assert len(self.settled | self.frontier) == self.size * self.size
-
 
     def unplace(self, row, col):
-        assert not self.settled & self.frontier
-        assert len(self.settled | self.frontier) == self.size * self.size
         self.rows[row][col] = None
         self.settled.remove((row, col))
         self.frontier.add((row, col))
-        assert len(self.settled | self.frontier) == self.size * self.size
 
     def next_position(self):
-        return min(self.frontier, key=dist)
+        try:
+            return min(self.frontier, key=dist)
+        except ValueError:
+            return None
 
     def __repr__(self):
         return '\n'.join(
@@ -106,7 +101,7 @@ def test_words():
         })
 
 
-SIZE = 4
+SIZE = 6
 
 
 def read_words():
@@ -145,7 +140,6 @@ def finish_word(board, ws, word):
     try:
         for ix, letter in enumerate(next_letters):
             loc = (row_ix + drow * ix, col_ix + dcol * ix)
-            print('(finish_word) placing letter at', loc)
             board.place_letter(*loc, letter)
             to_unplace.append(loc)
     except BoardError:
@@ -166,7 +160,6 @@ def assume_letter(board):
         return True
     random.shuffle(LETTERS)
     for letter in LETTERS:
-        print('(assume_letter) placing letter at', coords)
         board.place_letter(*coords, letter)
         if valid_board(board) and assume_letter(board):
             # woo hoo, we did it!
@@ -180,8 +173,7 @@ def assume_letter(board):
     # if we get to *this* point, then dang...
     # not a single one of the letters we tried produced a valid
     # board. Better let our caller know so they can deal with the
-    # situation. But first, let's unplace our letter.
-    board.unplace(*coords)
+    # situation.
     if coords[0] == coords[1]:
         print(board, file=sys.stderr)
         print(file=sys.stderr)
