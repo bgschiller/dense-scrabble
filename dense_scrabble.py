@@ -1,5 +1,4 @@
 import string
-import heapq
 import sys
 import marisa_trie
 import random
@@ -7,38 +6,15 @@ from itertools import groupby, product
 from collections import namedtuple
 from nose.tools import assert_equal
 
-
-class MinHeap(object):
-    def __init__(self, values=(), key=None):
-        self._key = key or (lambda v: None)
-        self._heap = [(self._key(v), v) for v in values]
-        heapq.heapify(self._heap)
-
-    def pop(self):
-        return heapq.heappop(self._heap)[1]
-
-    def push(self, val):
-        heapq.heappush(self._heap, (self._key(val), val))
-
-    def top(self):
-        if self._heap:
-            return self._heap[0][1]
-        else:
-            return None
-
-    def pop_value(self, val):
-        """
-        Do a pop, assuming the value is equal to the top.
-
-        Otherwise, raise an error.
-        """
-        if self.top() == val:
-            return self.pop()[1]
-        self._heap.remove((self._key(val), val))
-        heapq.heapify(self._heap)
+WordStart = namedtuple('WordStart', 'prefix next_loc step')
 
 
-WordStart = namedtuple('WordStart', 'prefix next_loc')
+class BoardError(ValueError):
+    pass
+
+
+def dist(tup):
+    return (tup[0] ** 2 + tup[1] ** 2)
 
 
 class Board(object):
@@ -47,10 +23,7 @@ class Board(object):
         self.size = size
         self.rows = [[None] * size for _ in range(size)]
         self.settled = set()
-        self.frontier = MinHeap(
-            product(range(size), range(size)),
-            # sort by distance from (0, 0)
-            key=lambda pair: pair[0] ** 2 + pair[1] ** 2)
+        self.frontier = set(product(range(size), range(size)))
 
     def transpose(self):
         t = Board(0)
@@ -59,8 +32,8 @@ class Board(object):
 
     def words(self):
         yield from self._words()
-        for word, (cix, rix) in self.transpose()._words():
-            yield WordStart(word, (rix, cix))  # swap rix, cix back
+        for word, (cix, rix), (dx, dy) in self.transpose()._words():
+            yield WordStart(word, (rix, cix), (dy, dx))  # swap rix, cix back
 
     def _words(self):
         for row_ix, row in enumerate(self.rows):
@@ -72,22 +45,32 @@ class Board(object):
                     group = list(group)
                     word = ''.join(char for _, char in group)
                     col_ix = max(ix for ix, _ in group)
-                    yield WordStart(word, (row_ix, col_ix + 1))
+                    yield WordStart(word, (row_ix, col_ix + 1), (0, 1))
 
     def place_letter(self, row, col, val):
+        current_value = self.rows[row][col]
+        if current_value and current_value != val:
+            raise BoardError('that position already has a different letter')
         self.rows[row][col] = val
 
-        if (row, col) not in self.settled:
-            self.settled.add((row, col))
-            self.frontier.pop_value((row, col))
+        assert (row, col) not in self.settled
+        assert not self.settled & self.frontier
+        assert len(self.settled | self.frontier) == self.size * self.size
+        self.settled.add((row, col))
+        self.frontier.remove((row, col))
+        assert len(self.settled | self.frontier) == self.size * self.size
+
 
     def unplace(self, row, col):
+        assert not self.settled & self.frontier
+        assert len(self.settled | self.frontier) == self.size * self.size
         self.rows[row][col] = None
         self.settled.remove((row, col))
-        self.frontier.push((row, col))
+        self.frontier.add((row, col))
+        assert len(self.settled | self.frontier) == self.size * self.size
 
     def next_position(self):
-        return self.frontier.top()
+        return min(self.frontier, key=dist)
 
     def __repr__(self):
         return '\n'.join(
@@ -123,7 +106,7 @@ def test_words():
         })
 
 
-SIZE = 6
+SIZE = 4
 
 
 def read_words():
@@ -155,14 +138,25 @@ def valid_board(board, words=WORD_TRIE):
 
 
 def finish_word(board, ws, word):
-    next_letter = word[len(ws.prefix)]
-    board.place_letter(*ws.next_loc, next_letter)
-    if assume_letter(board):
+    next_letters = word[len(ws.prefix):-1]
+    row_ix, col_ix = ws.next_loc
+    drow, dcol = ws.step
+    to_unplace = []
+    try:
+        for ix, letter in enumerate(next_letters):
+            loc = (row_ix + drow * ix, col_ix + dcol * ix)
+            print('(finish_word) placing letter at', loc)
+            board.place_letter(*loc, letter)
+            to_unplace.append(loc)
+    except BoardError:
+        return False
+    if valid_board(board) and assume_letter(board):
         # we did it!
         return True
     else:
         # whoops, that must not have worked out...
-        board.unplace(*ws.next_loc)
+        for loc in to_unplace:
+            board.unplace(*loc)
 
 
 def assume_letter(board):
@@ -172,6 +166,7 @@ def assume_letter(board):
         return True
     random.shuffle(LETTERS)
     for letter in LETTERS:
+        print('(assume_letter) placing letter at', coords)
         board.place_letter(*coords, letter)
         if valid_board(board) and assume_letter(board):
             # woo hoo, we did it!
@@ -181,6 +176,7 @@ def assume_letter(board):
         # or assume_letter() eventually ran into difficulty.
         # Oh well, we're about to try a different letter on
         # the next iteration anyways...
+        board.unplace(*coords)
     # if we get to *this* point, then dang...
     # not a single one of the letters we tried produced a valid
     # board. Better let our caller know so they can deal with the
