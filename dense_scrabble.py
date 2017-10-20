@@ -8,7 +8,7 @@ from nose.tools import assert_equal
 
 WordStart = namedtuple('WordStart', 'prefix next_loc step')
 
-
+ops = 0
 class BoardError(ValueError):
     pass
 
@@ -48,6 +48,8 @@ class Board(object):
                     yield WordStart(word, (row_ix, col_ix + 1), (0, 1))
 
     def place_letter(self, row, col, val):
+        global ops
+        ops += 1
         if self.rows[row][col]:
             raise BoardError('that position already has a different letter')
         self.rows[row][col] = val
@@ -69,8 +71,10 @@ class Board(object):
         """
         clear everything below and right of (row, col)
         """
+        global ops
         for row_ix in range(row, SIZE):
             for col_ix in range(col, SIZE):
+                ops += 1
                 self.rows[row_ix][col_ix] = None
                 self.settled.discard((row_ix, col_ix))
                 self.frontier.add((row_ix, col_ix))
@@ -133,7 +137,7 @@ WORD_TRIE = read_words()
 
 
 def valid_board(board, words=WORD_TRIE):
-    board.sanity_check()
+    #board.sanity_check()
     for ws in board.words():
         could_become = words.keys(ws.prefix)
         if not could_become:
@@ -148,7 +152,7 @@ def valid_board(board, words=WORD_TRIE):
 
 
 def finish_word(board, ws, word):
-    next_letters = word[len(ws.prefix):-1]
+    next_letters = word[len(ws.prefix):]
     row_ix, col_ix = ws.next_loc
     drow, dcol = ws.step
     to_unplace = []
@@ -158,10 +162,12 @@ def finish_word(board, ws, word):
             if loc[0] >= SIZE or loc[1] >= SIZE:
                 # This word wants to continue off the size of
                 # the board
+                if letter == '.':
+                    continue
                 return False
             board.place_letter(*loc, letter)
             to_unplace.append(loc)
-        board.sanity_check()
+        #board.sanity_check()
     except BoardError:
         return False
     if valid_board(board) and assume_letter(board):
@@ -169,10 +175,10 @@ def finish_word(board, ws, word):
         return True
     else:
         # whoops, that must not have worked out...
-        board.sanity_check()
+        #board.sanity_check()
         for loc in to_unplace:
             board.unplace(*loc)
-        board.sanity_check()
+        #board.sanity_check()
 
 
 def assume_letter(board):
@@ -183,7 +189,7 @@ def assume_letter(board):
     random.shuffle(LETTERS)
     for letter in LETTERS:
         board.place_letter(*coords, letter)
-        board.sanity_check()
+        #board.sanity_check()
         if valid_board(board) and assume_letter(board):
             # woo hoo, we did it!
             return True
@@ -193,12 +199,13 @@ def assume_letter(board):
         # Oh well, we're about to try a different letter on
         # the next iteration anyways...
         board.unplace(*coords)
-        board.sanity_check()
+        #board.sanity_check()
     # if we get to *this* point, then dang...
     # not a single one of the letters we tried produced a valid
     # board. Better let our caller know so they can deal with the
     # situation.
     if coords[0] == coords[1]:
+        print('ops so far: ', ops)
         print(board, file=sys.stderr)
         print(file=sys.stderr)
     return False
