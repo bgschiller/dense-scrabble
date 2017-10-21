@@ -132,7 +132,7 @@ def read_words():
     return trie
 
 
-LETTERS = list(string.ascii_lowercase + '.')
+LETTERS = list(string.ascii_lowercase)
 WORD_TRIE = read_words()
 
 
@@ -186,8 +186,10 @@ def assume_letter(board):
     if not coords:
         # no work to be done. woo hoo, we did it!
         return True
-    random.shuffle(LETTERS)
-    for letter in LETTERS:
+    letters = LETTERS[:]
+    random.shuffle(letters)
+    letters += '.'
+    for letter in letters:
         board.place_letter(*coords, letter)
         #board.sanity_check()
         if valid_board(board) and assume_letter(board):
